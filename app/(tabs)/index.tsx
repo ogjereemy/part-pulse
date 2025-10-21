@@ -1,98 +1,178 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
-
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { useAuth } from '@/context/AuthContext';
+import React from 'react';
+import { Image } from 'expo-image';
+import { Colors } from '@/constants/theme';
+import { Ionicons } from '@expo/vector-icons';
 import { Link } from 'expo-router';
+import { StyleSheet, View, TouchableOpacity, FlatList, ScrollView } from 'react-native';
+
+const liveEvents = [
+  { id: '1', title: 'Live Techno', image: require('@/assets/images/icon.png') },
+  { id: '2', title: 'Rooftop Bar', image: require('@/assets/images/icon.png') },
+];
+
+const categories = ['Rooftop', 'Afro', 'Rave', 'Luxury', 'University', 'VIP'];
+
+const featuredEvents = [
+  { id: '1', title: 'Masquerade Ball', image: require('@/assets/images/icon.png') },
+  { id: '2', title: '90s Throwback Night', image: require('@/assets/images/icon.png') },
+];
 
 export default function HomeScreen() {
-  return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+  const { user } = useAuth();
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+  return (
+    <ThemedView style={styles.container}>
+      <ScrollView showsVerticalScrollIndicator={false}>
+        <ThemedText type="title" style={styles.title}>Welcome, {user?.name || 'Explorer'}</ThemedText>
+
+        <View style={styles.aiSuggestion}>
+          <ThemedText style={styles.aiTitle}>Your Vibe Match</ThemedText>
+          <ThemedText>Deep House rooftop party &lt;3km away</ThemedText>
+        </View>
+
+        <ThemedText type="subtitle" style={styles.sectionTitle}>Live Now Near You</ThemedText>
+        <FlatList
+          data={liveEvents}
+          horizontal
+          renderItem={({ item }) => (
+            <TouchableOpacity style={styles.liveCard}>
+              <Image source={item.image} style={styles.liveCardImage} />
+              <View style={styles.liveIndicator} />
+              <ThemedText style={styles.liveCardTitle}>{item.title}</ThemedText>
+            </TouchableOpacity>
+          )}
+          keyExtractor={item => item.id}
+          showsHorizontalScrollIndicator={false}
+        />
+
+        <ThemedText type="subtitle" style={styles.sectionTitle}>Categories</ThemedText>
+        <FlatList
+          data={categories}
+          horizontal
+          renderItem={({ item }) => (
+            <TouchableOpacity style={styles.categoryChip}>
+              <ThemedText>{item}</ThemedText>
+            </TouchableOpacity>
+          )}
+          keyExtractor={item => item}
+          showsHorizontalScrollIndicator={false}
+        />
+
+        <ThemedText type="subtitle" style={styles.sectionTitle}>Featured</ThemedText>
+        {featuredEvents.map(event => (
+          <Link key={event.id} href={`/event/${event.id}`} asChild>
+            <TouchableOpacity style={styles.featuredCard}>
+              <Image source={event.image} style={styles.featuredCardImage} />
+              <ThemedText style={styles.featuredCardTitle}>{event.title}</ThemedText>
+            </TouchableOpacity>
+          </Link>
+        ))}
+      </ScrollView>
+
+      <Link href="/host" asChild>
+        <TouchableOpacity style={styles.hostButton}>
+          <Ionicons name="add" size={30} color="white" />
+        </TouchableOpacity>
+      </Link>
+    </ThemedView>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  container: {
+    flex: 1,
+    paddingTop: 60,
+    backgroundColor: Colors.dark.background,
   },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
+  title: {
+    paddingHorizontal: 20,
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
+  aiSuggestion: {
+    backgroundColor: '#1C1C1E',
+    padding: 20,
+    borderRadius: 10,
+    margin: 20,
+  },
+  aiTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: Colors.dark.tint,
+    marginBottom: 5,
+  },
+  sectionTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    marginTop: 10,
+    marginBottom: 10,
+    paddingHorizontal: 20,
+  },
+  liveCard: {
+    width: 150,
+    height: 150,
+    borderRadius: 10,
+    marginLeft: 20,
+    overflow: 'hidden',
+  },
+  liveCardImage: {
+    width: '100%',
+    height: '100%',
+  },
+  liveIndicator: {
     position: 'absolute',
+    top: 10,
+    right: 10,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: 'red',
+    borderWidth: 2,
+    borderColor: 'white',
+  },
+  liveCardTitle: {
+    position: 'absolute',
+    bottom: 10,
+    left: 10,
+    color: 'white',
+    fontWeight: 'bold',
+  },
+  categoryChip: {
+    backgroundColor: '#1C1C1E',
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    borderRadius: 20,
+    marginLeft: 20,
+  },
+  featuredCard: {
+    marginHorizontal: 20,
+    marginBottom: 20,
+    borderRadius: 15,
+    overflow: 'hidden',
+    backgroundColor: '#1C1C1E',
+  },
+  featuredCardImage: {
+    width: '100%',
+    height: 200,
+  },
+  featuredCardTitle: {
+    position: 'absolute',
+    bottom: 10,
+    left: 10,
+    color: 'white',
+    fontSize: 24,
+    fontWeight: 'bold',
+  },
+  hostButton: {
+    position: 'absolute',
+    bottom: 40,
+    right: 20,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: Colors.dark.tint,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
