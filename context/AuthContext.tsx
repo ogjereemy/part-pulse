@@ -1,10 +1,12 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Session, User } from '@supabase/supabase-js';
+import * as SecureStore from 'expo-secure-store';
 
 interface AuthContextType {
     user: User | null;
     session: Session | null;
+    initialized: boolean;
     signIn: (email: string, password: string) => Promise<void>;
     signUp: (email: string, password: string, userData?: { name: string; username: string; birth_date: string }) => Promise<void>;
     signInWithGoogle: () => Promise<void>;
@@ -17,7 +19,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const [user, setUser] = useState<User | null>(null);
     const [session, setSession] = useState<Session | null>(null);
-    const [loading, setLoading] = useState(true);
+    const [initializing, setInitializing] = useState(true);
 
 
     useEffect(() => {
@@ -26,10 +28,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 const { data: { session } } = await supabase.auth.getSession();
                 setSession(session);
                 setUser(session?.user ?? null);
+                if (session) {
+                    await SecureStore.setItemAsync('supabase.auth.token', session.access_token);
+                } else {
+                    await SecureStore.deleteItemAsync('supabase.auth.token');
+                }
             } catch (error) {
                 console.error('Error fetching session:', error as Error);
             } finally {
-                setLoading(false);
+                setInitializing(false);
             }
         };
 
@@ -38,6 +45,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
             setSession(session);
             setUser(session?.user ?? null);
+            if (session) {
+                SecureStore.setItemAsync('supabase.auth.token', session.access_token);
+            } else {
+                SecureStore.deleteItemAsync('supabase.auth.token');
+            }
         });
 
         return () => {
@@ -88,8 +100,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     };
 
     return (
-        <AuthContext.Provider value={{ user, session, signIn, signUp, signInWithGoogle, signOut, updatePhoneNumber }}>
-            {!loading && children}
+        <AuthContext.Provider value={{ user, session, initialized: !initializing, signIn, signUp, signInWithGoogle, signOut, updatePhoneNumber }}>
+            {children}
         </AuthContext.Provider>
     )
 }

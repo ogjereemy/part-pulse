@@ -1,216 +1,320 @@
-// Fallback ThemedView component used when '@/components/ThemedView' can't be resolved
-import { Colors } from '@/constants/theme';
-import { Alert, FlatList, StyleSheet, Text, TextInput, TextProps, TouchableOpacity, View } from 'react-native';
-
-import { useAuth } from '@/context/AuthContext';
+import React, { useState } from 'react';
+import { View, StyleSheet, ScrollView, TouchableOpacity, ImageBackground, Dimensions, ActivityIndicator, FlatList } from 'react-native';
+import { ThemedText } from '@/components/themed-text';
+import { Avatar } from '@/components/Avatar';
 import { Ionicons } from '@expo/vector-icons';
-import { Image } from 'expo-image';
-import { Link } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useAuth } from '@/context/AuthContext';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { getMe, getUserById, followUser, unfollowUser } from '@/services/usersService';
+import { getUserMedia } from '@/services/mediaService';
+import { User } from '../../types/user';
+import { MediaItem } from '../../types/media';
 
-const ThemedView = (props: any) => {
-  const { children, style, ...rest } = props;
-  return <View style={style} {...rest}>{children}</View>;
-};
-
-// Fallback ThemedText component used when '@/components/ThemedText' can't be resolved
-const ThemedText = (props: TextProps & { type?: string }) => {
-  const { children, style, ...rest } = props;
-  return <Text style={style} {...rest}>{children}</Text>;
-};
-
-const upcomingEvents = [
-  { id: '1', title: 'Rooftop DJ Night', date: 'Oct 30, 2025' },
-];
-
-const pastEvents = [
-  { id: '2', title: 'Sunset Beach Party', date: 'Oct 25, 2025' },
-];
+const { width } = Dimensions.get('window');
 
 export default function ProfileScreen() {
-  const { user, signOut, updatePhoneNumber } = useAuth();
-  const [activeTab, setActiveTab] = useState('Upcoming');
-  const [phoneNumber, setPhoneNumber] = useState(user?.phone || '');
+  const { user } = useAuth();
+  const router = useRouter();
+  const params = useLocalSearchParams();
+  const queryClient = useQueryClient();
+  const userId = params.id as string || user?.id;
 
-  useEffect(() => {
-    setPhoneNumber(user?.phone || '');
-  }, [user]);
+  const { data: profile, isLoading: isLoadingProfile } = useQuery<User>({
+    queryKey: ['profile', userId],
+    queryFn: () => userId === user?.id ? getMe() : getUserById(userId as string),
+    enabled: !!userId,
+    gcTime: 1000 * 60 * 10, // 10 minutes
+    staleTime: 1000 * 30, // 30 seconds
+  });
 
-  const handleSavePhoneNumber = async () => {
-    try {
-      await updatePhoneNumber(phoneNumber);
-      Alert.alert('Success', 'Phone number updated successfully!');
-    } catch (error: any) {
-      Alert.alert('Error', error.message);
-    }
-  };
+  const { data: media, isLoading: isLoadingMedia } = useQuery<MediaItem[]>({
+    queryKey: ['userMedia', userId],
+    queryFn: () => getUserMedia(userId as string),
+    enabled: !!userId,
+  });
 
-  return (
-    <ThemedView style={styles.container}>
-      <View style={styles.header}>
-        <Image source={{ uri: user?.avatar_url }} style={styles.avatar} />
-        <ThemedText type="title" style={styles.name}>{user?.name || 'Anonymous'}</ThemedText>
-        <ThemedText style={styles.bio}>Your bio goes here. Click to edit.</ThemedText>
-        <View style={styles.interestsContainer}>
-          <ThemedText style={styles.interest}>#techno</ThemedText>
-          <ThemedText style={styles.interest}>#rooftop</ThemedText>
+    const followMutation = useMutation({
+      mutationFn: (userId: string) => profile?.isFollowing ? unfollowUser(userId) : followUser(userId),
+      onMutate: async (userId: string) => {
+        await queryClient.cancelQueries({ queryKey: ['profile', userId] });
+        const previousProfile = queryClient.getQueryData(['profile', userId]);
+        queryClient.setQueryData(['profile', userId], (old: User | undefined) => ({
+          ...old,
+          isFollowing: !old?.isFollowing,
+          followers: (old?.isFollowing ? (old?.followers ? old.followers - 1 : 0) : (old?.followers ? old.followers + 1 : 1))
+        }));
+        return { previousProfile };
+      },
+      onError: (error, variables, context) => {
+        queryClient.setQueryData(['profile', variables], context?.previousProfile);
+      },
+      onSettled: (data, error, variables) => {
+        queryClient.invalidateQueries({ queryKey: ['profile', variables] });
+      },
+    });
+  
+    const [activeTab, setActiveTab] = useState('media');
+  
+    const renderTabContent = () => {
+      if (isLoadingMedia) return <ActivityIndicator />;
+  
+      switch (activeTab) {
+        case 'media':
+          return (
+            <FlatList
+              data={media}
+              numColumns={3}
+              renderItem={({ item }) => (
+                <TouchableOpacity onPress={() => router.push({ pathname: '/(tabs)/media/[id]' as any, params: { id: item.id } })}> 
+                  <ImageBackground source={{ uri: item.posterUrl }} style={styles.gridImage} />
+                </TouchableOpacity>
+              )}
+              keyExtractor={(item) => item.id}
+            />
+          );
+        case 'events':
+          return <View style={styles.tabContent}><ThemedText>Events coming soon</ThemedText></View>;
+        case 'about':
+          return <View style={styles.tabContent}><ThemedText>{profile?.bio}</ThemedText></View>;
+        default:
+          return null;
+      }
+    };
+  
+    if (isLoadingProfile) {
+      return (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#FF2D95" />
+          <ThemedText style={styles.loadingText}>Loading profile...</ThemedText>
         </View>
-
-        <ThemedText style={styles.sectionTitle}>Contact Information</ThemedText>
-        <TextInput
-          style={styles.input}
-          placeholder="Phone Number"
-          value={phoneNumber}
-          onChangeText={setPhoneNumber}
-          keyboardType="phone-pad"
-          placeholderTextColor="#888"
-        />
-        <TouchableOpacity style={styles.saveButton} onPress={handleSavePhoneNumber}>
-          <ThemedText style={styles.buttonText}>Save Phone Number</ThemedText>
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.tabContainer}>
-        <TouchableOpacity onPress={() => setActiveTab('Upcoming')} style={[styles.tab, activeTab === 'Upcoming' && styles.activeTab]}>
-          <ThemedText>Upcoming</ThemedText>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => setActiveTab('Past')} style={[styles.tab, activeTab === 'Past' && styles.activeTab]}>
-          <ThemedText>Past</ThemedText>
-        </TouchableOpacity>
-      </View>
-
-      <FlatList
-        data={activeTab === 'Upcoming' ? upcomingEvents : pastEvents}
-        renderItem={({ item }) => (
-          <View style={styles.eventCard}>
-            <ThemedText style={styles.eventTitle}>{item.title}</ThemedText>
-            <ThemedText>{item.date}</ThemedText>
+      );
+    }
+  
+    if (!profile) {
+      return (
+        <View style={styles.loadingContainer}>
+          <ThemedText style={styles.loadingText}>Profile not found.</ThemedText>
+        </View>
+      );
+    }
+  
+    return (
+      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+          <ImageBackground source={{ uri: profile.bannerUrl }} style={styles.banner}>
+              <LinearGradient
+              colors={['transparent', '#0E0E0E']}
+              style={styles.bannerGradient}
+              />
+              <View style={styles.headerContent}>
+                  {profile.isVerified ? (
+                      <LinearGradient
+                          colors={['#FF3CA6', '#8A2BE2']}
+                          style={styles.avatarBorder}
+                      >
+                          <Avatar uri={profile.avatarUrl} size={94} />
+                      </LinearGradient>
+                  ) : (
+                      <Avatar uri={profile.avatarUrl} size={100} />
+                  )}
+                  <ThemedText style={styles.username}>@{profile.username}</ThemedText>
+                  <ThemedText style={styles.name}>{profile.name}</ThemedText>
+  
+                  <View style={styles.statsContainer}>
+                      <View style={styles.statItem}>
+                          <ThemedText style={styles.statNumber}>{profile.followers}</ThemedText>
+                          <ThemedText style={styles.statLabel}>Followers</ThemedText>
+                      </View>
+                      <View style={styles.statItem}>
+                          <ThemedText style={styles.statNumber}>{profile.following}</ThemedText>
+                          <ThemedText style={styles.statLabel}>Following</ThemedText>
+                      </View>
+                  </View>
+  
+                  <View style={styles.actionButtons}>
+                      {user?.id === userId ? (
+                      <TouchableOpacity style={styles.editProfileButton} onPress={() => console.log('Edit Profile')}>
+                          <ThemedText style={styles.editProfileButtonText}>Edit Profile</ThemedText>
+                      </TouchableOpacity>
+                      ) : (
+                      <TouchableOpacity
+                          style={[styles.followButton, profile.isFollowing && styles.followingButton]}
+                          onPress={() => followMutation.mutate(userId as string)}
+                      >
+                          <ThemedText style={styles.followButtonText}>
+                          {profile.isFollowing ? 'Following' : 'Follow'}
+                          </ThemedText>
+                      </TouchableOpacity>
+                      )}
+                      {profile.isHost && (
+                      <TouchableOpacity style={styles.createEventButton} onPress={() => router.push({ pathname: '/(tabs)/create-event' as any })}> 
+                          <Ionicons name="add-circle" size={20} color="white" />
+                          <ThemedText style={styles.createEventButtonText}>Create Event</ThemedText>
+                      </TouchableOpacity>
+                      )}
+                  </View>
+              </View>
+          </ImageBackground>
+          <View style={styles.profileContent}>
+              <View style={styles.tabsContainer}>
+                  <TouchableOpacity style={[styles.tab, activeTab === 'media' && styles.activeTab]} onPress={() => setActiveTab('media')}>
+                  <ThemedText style={[styles.tabText, activeTab === 'media' && styles.activeTabText]}>Media</ThemedText>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.tab, activeTab === 'events' && styles.activeTab]} onPress={() => setActiveTab('events')}>
+                  <ThemedText style={[styles.tabText, activeTab === 'events' && styles.activeTabText]}>Events</ThemedText>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.tab, activeTab === 'about' && styles.activeTab]} onPress={() => setActiveTab('about')}>
+                  <ThemedText style={[styles.tabText, activeTab === 'about' && styles.activeTabText]}>About</ThemedText>
+                  </TouchableOpacity>
+              </View>
+  
+              {renderTabContent()}
           </View>
-        )}
-        keyExtractor={item => item.id}
-      />
-
-      <Link href="/dashboard" asChild>
-        <TouchableOpacity style={styles.hostButton}>
-          <ThemedText style={styles.hostButtonText}>Host Dashboard</ThemedText>
-        </TouchableOpacity>
-      </Link>
-
-      <TouchableOpacity onPress={signOut} style={styles.logoutButton}>
-        <Ionicons name="log-out-outline" size={24} color="white" />
-      </TouchableOpacity>
-    </ThemedView>
-  );
-}
-
+      </ScrollView>
+    );
+  }
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingTop: 60,
-    backgroundColor: Colors.dark.background,
+    backgroundColor: '#0E0E0E',
   },
-  header: {
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 20,
+    backgroundColor: '#0E0E0E',
+  },
+  loadingText: {
+    marginTop: 10,
+    color: '#A0A0A0',
+  },
+  banner: {
+    width: '100%',
+    height: 300,
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+  },
+  bannerGradient: {
+    ...StyleSheet.absoluteFillObject,
+    top: '50%',
+  },
+  headerContent: {
+    alignItems: 'center',
     marginBottom: 20,
   },
-  avatar: {
-    width: 100,
-    height: 100,
+  avatarBorder: {
     borderRadius: 50,
-    marginBottom: 10,
+    padding: 3,
   },
-  name: {
+  username: {
     fontSize: 24,
     fontWeight: 'bold',
-  },
-  bio: {
-    color: '#888',
-    marginTop: 5,
-  },
-  interestsContainer: {
-    flexDirection: 'row',
+    color: 'white',
     marginTop: 10,
   },
-  interest: {
-    backgroundColor: '#333',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 15,
+  name: {
+    fontSize: 16,
+    color: '#A0A0A0',
+    marginTop: 5,
+  },
+  statsContainer: {
+    flexDirection: 'row',
+    marginTop: 20,
+    width: '80%',
+    justifyContent: 'space-around',
+  },
+  statItem: {
+    alignItems: 'center',
+  },
+  statNumber: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#FF3CA6',
+  },
+  statLabel: {
+    fontSize: 14,
+    color: '#A0A0A0',
+  },
+  actionButtons: {
+    flexDirection: 'row',
+    marginTop: 20,
+  },
+  editProfileButton: {
+    backgroundColor: '#1A1A1A',
+    borderRadius: 20,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
     marginHorizontal: 5,
   },
-  tabContainer: {
+  editProfileButtonText: {
+    color: 'white',
+    fontWeight: 'bold',
+  },
+  followButton: {
+    backgroundColor: '#FF3CA6',
+    borderRadius: 20,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    marginHorizontal: 5,
+  },
+  followingButton: {
+    backgroundColor: '#A0A0A0',
+  },
+  followButtonText: {
+    color: 'white',
+    fontWeight: 'bold',
+  },
+  createEventButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#00D1FF',
+    borderRadius: 20,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    marginHorizontal: 5,
+  },
+  createEventButtonText: {
+    color: 'white',
+    fontWeight: 'bold',
+    marginLeft: 5,
+  },
+  profileContent: {
+    backgroundColor: '#1A1A1A',
+    borderWidth: 1,
+    borderColor: '#FF3CA6',
+    margin: 16,
+    borderRadius: 12,
+  },
+  tabsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-around',
     borderBottomWidth: 1,
-    borderBottomColor: '#333',
+    borderBottomColor: 'rgba(255,255,255,0.1)',
   },
   tab: {
-    padding: 15,
+    paddingVertical: 15,
+    width: width / 3,
+    alignItems: 'center',
   },
   activeTab: {
     borderBottomWidth: 2,
-    borderBottomColor: Colors.dark.tint,
+    borderBottomColor: '#FF3CA6',
   },
-  eventCard: {
-    backgroundColor: '#1C1C1E',
-    padding: 20,
-    borderRadius: 10,
-    margin: 20,
-    marginBottom: 0,
-  },
-  eventTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 5,
-  },
-  hostButton: {
-    backgroundColor: Colors.dark.tint,
-    padding: 15,
-    borderRadius: 10,
-    alignItems: 'center',
-    margin: 20,
-  },
-  hostButtonText: {
-    color: 'white',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  logoutButton: {
-    position: 'absolute',
-    top: 60,
-    right: 20,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: 'white',
-    marginTop: 20,
-    marginBottom: 10,
-  },
-  input: {
-    height: 50,
-    borderColor: '#333',
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 15,
-    marginBottom: 15,
-    color: 'white',
+  tabText: {
+    color: '#A0A0A0',
     fontSize: 16,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    width: '100%',
-  },
-  saveButton: {
-    backgroundColor: Colors.dark.tint,
-    padding: 15,
-    borderRadius: 10,
-    alignItems: 'center',
-    marginBottom: 15,
-    width: '100%',
-  },
-  buttonText: {
-    color: 'white',
-    fontSize: 18,
     fontWeight: 'bold',
+  },
+  activeTabText: {
+    color: 'white',
+  },
+  tabContent: {
+    padding: 20,
+  },
+  gridImage: {
+    width: width / 3 - 12,
+    height: width / 3 - 12,
+    margin: 1,
   },
 });
